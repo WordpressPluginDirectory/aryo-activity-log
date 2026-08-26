@@ -55,6 +55,7 @@ class AAL_Export {
 		$list_table->prepare_items();
 		$items = $list_table->items;
 		$columns = $list_table->get_columns();
+		$columns = $this->add_export_ip_column( $columns );
 
 		$op = array();
 		foreach ( $items as $item ) {
@@ -89,6 +90,14 @@ class AAL_Export {
 				case 'author':
 					$user = get_userdata( $item->user_id );
 					$row[ $column ] = isset( $user->display_name ) ? $user->display_name : 'unknown';
+					break;
+
+				case 'source':
+					if ( AAL_Maintenance::is_schema_ready( '1.1' ) && ! empty( $item->request_source ) ) {
+						$row[ $column ] = self::format_source_label( $item->request_source );
+					} else {
+						$row[ $column ] = '';
+					}
 					break;
 
 				case 'ip':
@@ -174,5 +183,47 @@ class AAL_Export {
 	 */
 	public function increase_throughput( $records_per_page ) {
 		return PHP_INT_MAX;
+	}
+
+	private function add_export_ip_column( array $columns ): array {
+		if ( 'no-collect-ip' === AAL_Main::instance()->settings->get_option( 'log_visitor_ip_source' ) ) {
+			return $columns;
+		}
+
+		$ip_label = __( 'IP', 'aryo-activity-log' );
+
+		$result = array();
+		$inserted = false;
+		foreach ( $columns as $key => $label ) {
+			$result[ $key ] = $label;
+			if ( 'source' === $key ) {
+				$result['ip'] = $ip_label;
+				$inserted = true;
+			}
+		}
+
+		if ( ! $inserted ) {
+			$result['ip'] = $ip_label;
+		}
+
+		return $result;
+	}
+
+	private static function format_source_label( $raw ) {
+		$parsed = AAL_API::parse_request_source( $raw );
+		$parts = array();
+		$channel_labels = AAL_API::get_channel_labels();
+
+		if ( ! empty( $parsed['channel'] ) && isset( $channel_labels[ $parsed['channel'] ] ) ) {
+			$parts[] = $channel_labels[ $parsed['channel'] ];
+		}
+
+		if ( ! empty( $parsed['app_name'] ) ) {
+			$parts[] = 'App Password: ' . $parsed['app_name'];
+		} elseif ( false !== strpos( $raw, 'app:' ) ) {
+			$parts[] = 'App Password';
+		}
+
+		return implode( '; ', $parts );
 	}
 }
